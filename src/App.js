@@ -1,24 +1,43 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import AdminLogin from './pages/AdminLogin';
+import AdminDashboard from './pages/AdminDashboard';
+import BusinessLogin from './pages/BusinessLogin';
+import BusinessDashboard from './pages/BusinessDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
+import CustomerSignup from './pages/CustomerSignup';
+import JoinBusiness from './pages/JoinBusiness';
+
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <Routes>
+        {/* Admin Login and Dashboard */}
+        <Route path="/join/:businessId" element={<CustomerSignup />} />
+        <Route path="/join/:businessId" element={<JoinBusiness />} />
+        <Route path="/admin" element={<AdminLogin />} />
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Business Login and Dashboard */}
+        <Route path="/business" element={<BusinessLogin />} />
+        <Route
+          path="/business/dashboard"
+          element={
+            <ProtectedRoute>
+              <BusinessDashboard />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </Router>
   );
 }
 
