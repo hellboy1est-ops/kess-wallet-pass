@@ -32,7 +32,7 @@ const CustomerSignup = () => {
         createdAt: serverTimestamp()
         });
 
-        const localServer = '  https://60640c05611c.ngrok-free.app'; // Replace with your actual IP
+        const localServer = ' https://b6f14b660ca9.ngrok-free.app'; // Replace with your actual IP
         window.location.href = `${localServer}/api/pass/${businessId}/${formData.email}`;
     } catch (err) {
         console.error('❌ Failed to save customer:', err.message);

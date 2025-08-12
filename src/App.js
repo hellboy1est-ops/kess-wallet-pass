@@ -14,8 +14,6 @@ function App() {
     <Router>
       <Routes>
         {/* Admin Login and Dashboard */}
-        <Route path="/join/:businessId" element={<CustomerSignup />} />
-        <Route path="/join/:businessId" element={<JoinBusiness />} />
         <Route path="/admin" element={<AdminLogin />} />
         <Route
           path="/admin/dashboard"

@@ -96,7 +96,7 @@ const BusinessDashboard = () => {
       setSuccess(`Stamp issued to ${customerEmail}`);
 
       // Generate the QR URL after issuing stamp
-      const serverBase = '  https://60640c05611c.ngrok-free.app'; // ← Replace with actual IP for real QR
+      const serverBase = ''; // ← Replace with actual IP for real QR
       setQrUrl(`${serverBase}/api/pass/${businessId}/${customerEmail}`);
     } catch (err) {
       console.error(err);
@@ -108,7 +108,7 @@ const handleStampForRegistered = async (email) => {
   setError('');
 
   try {
-    const response = await fetch('https://60640c05611c.ngrok-free.app/api/stamp/${businessId}/${email}', {
+    const response = await fetch(` https://b6f14b660ca9.ngrok-free.app/api/stamp/${businessId}/${email}`, {
       method: 'POST',
     });
 
@@ -125,6 +125,31 @@ const handleStampForRegistered = async (email) => {
     setError('Error issuing stamp: ' + err.message);
   }
 };
+
+
+//   // 📲 Push notification to customer device
+// const pushToken = customerData.pushToken;
+// if (pushToken) {
+//   const options = {
+//     hostname: 'api.push.apple.com',
+//     port: 443,
+//     path: `/3/device/${pushToken}`,
+//     method: 'POST',
+//     headers: {
+//       'apns-topic': business.passTypeIdentifier
+//     }
+//   };
+
+//   const pushReq = https.request(options, pushRes => {
+//     console.log(`📲 APNs response: ${pushRes.statusCode}`);
+//   });
+
+//   pushReq.on('error', err => {
+//     console.error('❌ APNs push failed:', err);
+//   });
+
+//   pushReq.end();
+// }
 
 
   return (

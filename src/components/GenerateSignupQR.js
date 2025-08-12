@@ -19,7 +19,7 @@ const GenerateSignupQR = () => {
         setBusinessId(data.businessId);
 
         // Replace with your actual local IP address (not localhost!)
-        const ip = '  https://60640c05611c.ngrok-free.app'; 
+        const ip = ' https://b6f14b660ca9.ngrok-free.app'; 
         setSignupUrl(`${ip}/join/${data.businessId}`);
       }
     };

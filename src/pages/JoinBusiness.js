@@ -24,7 +24,7 @@ const JoinBusiness = () => {
 
     setSuccess('Thank you! You can now add your loyalty card.');
     // Optionally redirect to `/api/pass/:businessId/:email`
-    window.location.href = '  https://60640c05611c.ngrok-free.app/api/pass/${businessId}/${form.email}';
+    window.location.href = ` https://b6f14b660ca9.ngrok-free.app/api/pass/${businessId}/${form.email}`;
   };
 
   return (
