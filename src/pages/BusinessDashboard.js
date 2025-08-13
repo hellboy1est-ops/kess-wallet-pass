@@ -1,224 +1,306 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { auth, db } from '../firebase/config';
 import {
   doc,
   getDoc,
-  addDoc,
   collection,
-  serverTimestamp,
+  query,
+  where,
+  onSnapshot,
 } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { QRCodeSVG } from 'qrcode.react';
-import GenerateSignupQR from '../components/GenerateSignupQR';
-import { query, where, getDocs } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { QRCodeCanvas } from 'qrcode.react';
+import './BusinessDashboard.css';
 
-const BusinessDashboard = () => {
+const API_BASE =
+  process.env.REACT_APP_API_BASE || 'https://b6f14b660ca9.ngrok-free.app'; // your kess-wallet-pass server
+
+export default function BusinessDashboard() {
   const navigate = useNavigate();
-  const [businessName, setBusinessName] = useState('');
+
   const [businessId, setBusinessId] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-  const [qrUrl, setQrUrl] = useState('');
+  const [business, setBusiness] = useState(null);
+  const [loadingBiz, setLoadingBiz] = useState(true);
+
   const [customers, setCustomers] = useState([]);
-  const [selectedCustomerEmail, setSelectedCustomerEmail] = useState('');
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
 
+  const [search, setSearch] = useState('');
+  const [qrOpen, setQrOpen] = useState(false);
+  const [issuing, setIssuing] = useState(null); // email being stamped
+  const [toast, setToast] = useState(null); // {type:'success'|'error', msg:string}
 
-  // 🔐 Handle logout
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      navigate('/business');
-    } catch (err) {
-      console.error('Logout failed:', err.message);
-    }
-  };
-
-  // 🔍 Fetch business info on load
+  // ---------- Auth gate + business load ----------
   useEffect(() => {
-  const fetchBusinessData = async () => {
     const user = auth.currentUser;
     if (!user) {
       navigate('/business');
       return;
     }
 
-    try {
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const data = userDoc.data();
-
-      if (data?.role === 'business') {
-        const bizId = data.businessId;
+    (async () => {
+      try {
+        // find the user's role + businessId
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists() || userDoc.data().role !== 'business') {
+          navigate('/business');
+          return;
+        }
+        const bizId = userDoc.data().businessId;
         setBusinessId(bizId);
 
-        const businessDoc = await getDoc(doc(db, 'businesses', bizId));
-        if (businessDoc.exists()) {
-          setBusinessName(businessDoc.data().name);
-        }
-
-        // 🧑‍💼 Fetch customers for this business
-        const q = query(collection(db, 'customers'), where('businessId', '==', bizId));
-        const snapshot = await getDocs(q);
-        const customerList = snapshot.docs.map(doc => doc.data());
-        setCustomers(customerList);
-      } else {
-        setError('Access denied.');
-        navigate('/business');
+        const bizSnap = await getDoc(doc(db, 'businesses', bizId));
+        if (bizSnap.exists()) setBusiness(bizSnap.data());
+      } catch (e) {
+        console.error(e);
+        setToast({ type: 'error', msg: 'Failed to load business' });
+      } finally {
+        setLoadingBiz(false);
       }
-    } catch (err) {
-      console.error(err);
-      setError('Failed to load business info.');
-    }
-  };
+    })();
+  }, [navigate]);
 
-  fetchBusinessData();
-}, [navigate]);
+  // ---------- Live customers for this business ----------
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(
+      collection(db, 'customers'),
+      where('businessId', '==', businessId)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = [];
+        snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+        // normalize for display
+        rows.sort((a, b) =>
+          (a.name || a.email || '').localeCompare(b.name || b.email || '')
+        );
+        setCustomers(rows);
+        setLoadingCustomers(false);
+      },
+      (err) => {
+        console.error(err);
+        setToast({ type: 'error', msg: 'Failed to load customers' });
+        setLoadingCustomers(false);
+      }
+    );
+    return () => unsub();
+  }, [businessId]);
 
+  // ---------- Derived stats ----------
+  const stats = useMemo(() => {
+    const active = customers.length;
+    const totalStamps = customers.reduce((sum, c) => sum + (c.stamps || 0), 0);
+    return { active, totalStamps };
+  }, [customers]);
 
-  // 🧾 Issue stamp
-  const handleStamp = async (e) => {
-    e.preventDefault();
-    setSuccess('');
-    setError('');
-    setQrUrl('');
-
-    if (!customerEmail || !businessId) return;
-
+  // ---------- Actions ----------
+  const handleLogout = async () => {
     try {
-      await addDoc(collection(db, 'stamps'), {
-        customerEmail,
-        businessId,
-        issuedAt: serverTimestamp(),
-        issuedBy: auth.currentUser.uid,
-      });
-
-      setSuccess(`Stamp issued to ${customerEmail}`);
-
-      // Generate the QR URL after issuing stamp
-      const serverBase = ''; // ← Replace with actual IP for real QR
-      setQrUrl(`${serverBase}/api/pass/${businessId}/${customerEmail}`);
+      await signOut(auth);
+      navigate('/business');
     } catch (err) {
-      console.error(err);
-      setError('Error issuing stamp: ' + err.message);
+      console.error('Logout failed:', err);
+      setToast({ type: 'error', msg: 'Logout failed' });
     }
   };
-const handleStampForRegistered = async (email) => {
-  setSuccess('');
-  setError('');
 
-  try {
-    const response = await fetch(` https://b6f14b660ca9.ngrok-free.app/api/stamp/${businessId}/${email}`, {
-      method: 'POST',
-    });
+  const joinUrl = businessId
+    ? `${API_BASE}/join/${businessId}`
+    : '';
 
-    const result = await response.json();
-    if (result.success) {
-      setSuccess(`Stamp issued to ${email}`);
-    } else {
-      setError('Stamp issue failed.');
+  const copyJoin = async () => {
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+      setToast({ type: 'success', msg: 'Join link copied!' });
+    } catch {
+      setToast({ type: 'error', msg: 'Copy failed' });
     }
+  };
 
-    setSelectedCustomerEmail('');
-  } catch (err) {
-    console.error(err);
-    setError('Error issuing stamp: ' + err.message);
+  const issueStamp = async (email) => {
+    setIssuing(email);
+    try {
+      // Optimistic UI
+      setCustomers((prev) =>
+        prev.map((c) =>
+          (c.email || '').toLowerCase() === email.toLowerCase()
+            ? { ...c, stamps: (c.stamps || 0) + 1 }
+            : c
+        )
+      );
+
+      const res = await fetch(
+        `${API_BASE}/api/stamp/${businessId}/${encodeURIComponent(email)}`,
+        { method: 'POST' }
+      );
+      if (!res.ok) throw new Error(await res.text());
+
+      setToast({ type: 'success', msg: `Stamp issued to ${email}` });
+    } catch (e) {
+      console.error(e);
+      // rollback
+      setCustomers((prev) =>
+        prev.map((c) =>
+          (c.email || '').toLowerCase() === email.toLowerCase()
+            ? { ...c, stamps: Math.max((c.stamps || 1) - 1, 0) }
+            : c
+        )
+      );
+      setToast({ type: 'error', msg: 'Failed to issue stamp' });
+    } finally {
+      setIssuing(null);
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    if (!s) return customers;
+    return customers.filter((c) => {
+      const name = (c.name || '').toLowerCase();
+      const email = (c.email || '').toLowerCase();
+      const phone = (c.phone || '').toLowerCase();
+      return name.includes(s) || email.includes(s) || phone.includes(s);
+    });
+  }, [search, customers]);
+
+  // ---------- UI ----------
+  if (loadingBiz) {
+    return <div className="bd-shell"><div className="bd-loader" /></div>;
   }
-};
 
-
-//   // 📲 Push notification to customer device
-// const pushToken = customerData.pushToken;
-// if (pushToken) {
-//   const options = {
-//     hostname: 'api.push.apple.com',
-//     port: 443,
-//     path: `/3/device/${pushToken}`,
-//     method: 'POST',
-//     headers: {
-//       'apns-topic': business.passTypeIdentifier
-//     }
-//   };
-
-//   const pushReq = https.request(options, pushRes => {
-//     console.log(`📲 APNs response: ${pushRes.statusCode}`);
-//   });
-
-//   pushReq.on('error', err => {
-//     console.error('❌ APNs push failed:', err);
-//   });
-
-//   pushReq.end();
-// }
-
+  if (!business) {
+    return (
+      <div className="bd-shell">
+        <div className="bd-card">
+          <h2>Business not found</h2>
+          <button className="btn" onClick={() => navigate('/business')}>Back to Login</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h2>{businessName} Dashboard</h2>
-      <GenerateSignupQR />
-      <p>Logged in as: {auth.currentUser?.email}</p>
-      <button
-        onClick={handleLogout}
-        style={{ float: 'right', marginBottom: '1rem' }}
-      >
-        Logout
-      </button>
-      <hr />
+    <div className="bd-shell">
+      <header className="bd-header">
+        <div className="bd-title">
+          <div className="bd-logo" style={{ backgroundColor: business.color || '#111' }}>
+            {(business.name || 'Business').slice(0, 1)}
+          </div>
+          <div>
+            <h1>{business.name}</h1>
+            <div className="bd-sub">Business Dashboard</div>
+          </div>
+        </div>
 
-      {/* <h3>Issue a Stamp + Generate Pass</h3>
-      <form onSubmit={handleStamp}>
-        <label>Customer Email:</label>
-        <br />
-        <input
-          type="email"
-          value={customerEmail}
-          onChange={(e) => setCustomerEmail(e.target.value)}
-          required
-        />
-        <br />
-        <br />
-        <button type="submit">Issue Stamp & Show QR</button>
-      </form> */}
+        <div className="bd-actions">
+          <button className="btn ghost" onClick={() => setQrOpen(true)}>Show Join QR</button>
+          <button className="btn" onClick={copyJoin}>Copy Join Link</button>
+          <button className="btn danger" onClick={handleLogout}>Logout</button>
+        </div>
+      </header>
 
-      {/* <hr style={{ margin: '2rem 0' }} /> */}
-    <h3>Issue Stamp to a Registered Customer</h3>
+      <section className="bd-stats">
+        <StatCard label="Active Customers" value={stats.active} />
+        <StatCard label="Total Stamps" value={stats.totalStamps} />
+        <StatCard label="Goal per Reward" value={business.goalStamps || 10} />
+      </section>
 
-    <label>Select a customer:</label>
-    <br />
-    <select
-      value={selectedCustomerEmail}
-      onChange={(e) => setSelectedCustomerEmail(e.target.value)}
-    >
-      <option value="">-- Select --</option>
-      {customers.map((c) => (
-        <option key={c.email} value={c.email}>
-          {c.name} ({c.email})
-        </option>
-      ))}
-    </select>
+      <section className="bd-panel">
+        <div className="bd-panel-head">
+          <h2>Customers</h2>
+          <input
+            className="bd-search"
+            placeholder="Search by name, email, or phone…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
-    <br /><br />
-    <button
-      disabled={!selectedCustomerEmail}
-      onClick={() => handleStampForRegistered(selectedCustomerEmail)}
-    >
-      Issue Stamp
-    </button>
+        <div className="bd-table-wrap">
+          <table className="bd-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th className="hide-sm">Phone</th>
+                <th className="center">Stamps</th>
+                <th className="right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingCustomers ? (
+                <tr><td colSpan="5"><div className="row-loader" /></td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan="5" className="muted center">No customers yet. Share your join QR or link.</td></tr>
+              ) : (
+                filtered.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.name || '—'}</td>
+                    <td>{c.email || '—'}</td>
+                    <td className="hide-sm">{c.phone || '—'}</td>
+                    <td className="center">
+                      <Badge>{c.stamps ?? 0}</Badge>
+                    </td>
+                    <td className="right">
+                      <button
+                        className="btn small"
+                        disabled={issuing === (c.email || '').toLowerCase()}
+                        onClick={() => issueStamp((c.email || '').toLowerCase())}
+                        title="Issue one stamp"
+                      >
+                        {issuing === (c.email || '').toLowerCase() ? 'Issuing…' : 'Issue Stamp'}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
+      {/* QR Modal */}
+      {qrOpen && (
+        <div className="bd-modal" onClick={() => setQrOpen(false)}>
+          <div className="bd-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Join & Add to Wallet</h3>
+            <p className="muted">Ask customers to scan this QR on their iPhone.</p>
+            <div className="qr-wrap">
+              {joinUrl && <QRCodeCanvas value={joinUrl} size={240} includeMargin />}
+            </div>
+            <div className="qr-link">{joinUrl}</div>
+            <div className="modal-actions">
+              <button className="btn" onClick={copyJoin}>Copy Link</button>
+              <button className="btn ghost" onClick={() => setQrOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {success && <p style={{ color: 'green' }}>{success}</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      {/* 🎟️ Show QR after successful stamp */}
-      {qrUrl && (
-        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
-          <QRCodeSVG value={qrUrl} size={200} />
-          <p style={{ wordBreak: 'break-word' }}>{qrUrl}</p>
-          <p>Scan to add loyalty card to Apple Wallet</p>
+      {/* Toast */}
+      {toast && (
+        <div className={`bd-toast ${toast.type}`} onAnimationEnd={() => setToast(null)}>
+          {toast.msg}
         </div>
       )}
     </div>
   );
-};
+}
 
-export default BusinessDashboard;
+/* ---------- Small UI bits ---------- */
+
+function StatCard({ label, value }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+    </div>
+  );
+}
+
+function Badge({ children }) {
+  return <span className="bd-badge">{children}</span>;
+}
